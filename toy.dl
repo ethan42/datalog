@@ -1,0 +1,83 @@
+// Toy symbolic executor written in Datalog and ran in Souffle.
+
+.type Var = symbol
+.type Cond = symbol
+.type Binop = symbol
+.type Unop = symbol
+
+// technically Val is Var | const
+.type Val = symbol
+
+.type Statement =
+    inst_cond {cond : Cond, op1: Val, op2: Val, left : Program, right : Program}
+  | inst_binop {l: Var, op: Binop, op1 : Val, op2 : Val}
+  | inst_assign {l : Var, r : Val}
+  | inst_fail {}
+
+.type Operator = symbol
+
+.type Expr = [op: Operator, op1: Val, op2: Val, opt: Val]
+
+.type Program = [head: Statement, tail: Program]
+
+.type State = [head: Var, tail: State]
+
+.type Predicate = [head: Expr, tail: Predicate]
+
+.decl RunStatement(start: Predicate, stmt: Statement, final: Predicate)
+RunStatement(start, $inst_assign(var, val), final) :-
+    ReachablePredicate(start, prog),
+    NextProgramStatement($inst_assign(var, val), prog),
+    final = [["Let", var, val, ""], start].
+RunStatement(start, $inst_binop(var, binop, op1, op2), final) :-
+    ReachablePredicate(start, prog),
+    NextProgramStatement($inst_binop(var, binop, op1, op2), prog),
+    final = [["+", var, op1, op2], start].
+RunStatement(start, $inst_cond(cond, op1, op2, trueProg, falseProg), final) :-
+    ReachablePredicate(start, prog),
+    NextProgramStatement($inst_cond(cond, op1, op2, trueProg, falseProg), prog),
+    // ReachablePredicate(_, trueProg),
+    // ReachablePredicate(_, falseProg),
+    final = [["Ite", cond, "true", "false"], start].
+
+.decl ReachablePredicate(pred: Predicate, program: Program)
+// For a given Program, compute the Predicate after execution
+ReachablePredicate(nil, nil).
+ReachablePredicate(pred, [head, tail]) :-
+    ReachablePredicate(pred1, tail),
+    RunStatement(pred1, head, pred).
+
+.decl NextProgramStatement(stmt: Statement, prevProg: Program)
+// For all Programs, compute all (stmt, restProgram) combinations
+NextProgramStatement(stmt, restProg) :-
+    LoadProgram([stmt, restProg]).
+NextProgramStatement(stmt, restProg) :-
+    NextProgramStatement(_, [stmt, restProg]).
+
+.decl EndPredicate(pred: Predicate)
+// Computes the final CPU state from evaluating all available
+// Programs
+EndPredicate(final) :-
+    ReachablePredicate(final, program),
+    LoadProgram(program).
+
+.output EndPredicate
+
+// Test programs start here
+.decl LoadProgram(program: Program)
+LoadProgram(
+    [
+        $inst_cond(
+            "y", ">", "100",
+            [$inst_assign("x", "5"), nil],
+            [$inst_assign("x", "10"), nil]
+        ),
+        [
+            $inst_binop("y", "+", "z", "54"),
+            [
+                $inst_assign("x", "42"),
+                nil
+            ]
+        ]
+    ]
+).
